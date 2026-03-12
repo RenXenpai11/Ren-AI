@@ -69,6 +69,8 @@
     .filter((section) => section.items.length > 0);
 
   let isDark = false;
+  let isMobile = false;
+  let isSidebarOpen = true;
 
   onMount(() => {
     const storedChats = localStorage.getItem(CHAT_STORAGE_KEY);
@@ -100,6 +102,19 @@
     } else {
       isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
+
+    const media = window.matchMedia("(max-width: 860px)");
+    const syncViewport = () => {
+      isMobile = media.matches;
+      isSidebarOpen = !media.matches;
+    };
+
+    syncViewport();
+    media.addEventListener("change", syncViewport);
+
+    return () => {
+      media.removeEventListener("change", syncViewport);
+    };
   });
 
   $: if (browser) {
@@ -145,6 +160,10 @@
 
     activeChatId = selected.id;
     messages = [...selected.messages];
+
+    if (isMobile) {
+      isSidebarOpen = false;
+    }
   }
 
   function handleNewChat() {
@@ -159,6 +178,18 @@
     chats = [newChat, ...chats];
     activeChatId = id;
     messages = [...newChat.messages];
+
+    if (isMobile) {
+      isSidebarOpen = false;
+    }
+  }
+
+  function toggleSidebar() {
+    isSidebarOpen = !isSidebarOpen;
+  }
+
+  function closeSidebar() {
+    isSidebarOpen = false;
   }
 
   function handlePromptSend(event) {
@@ -220,14 +251,31 @@
 
   <Sidebar
     {isDark}
+    {isMobile}
+    isOpen={isSidebarOpen}
     sections={sidebarSections}
     {activeChatId}
     on:selectchat={handleSelectChat}
     on:newchat={handleNewChat}
   />
 
+  {#if isMobile && isSidebarOpen}
+    <button class="sidebar-overlay" type="button" aria-label="Close sidebar" on:click={closeSidebar}></button>
+  {/if}
+
   <div class="main-shell">
     <div class="topbar">
+      {#if isMobile}
+        <button
+          class="icon-btn menu-btn"
+          type="button"
+          aria-label="Toggle sidebar"
+          on:click={toggleSidebar}
+        >
+          Chats
+        </button>
+      {/if}
+
       <div class="model-pill">
         <span class="dot"></span>
         RenAi 4
@@ -309,6 +357,14 @@
   backdrop-filter: blur(8px);
 }
 
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(11, 17, 32, 0.35);
+  z-index: 19;
+}
+
 .model-pill {
   border: 1px solid var(--line);
   background: var(--panel-soft);
@@ -341,6 +397,10 @@
   gap: 10px;
 }
 
+.menu-btn {
+  display: none;
+}
+
 .ghost-btn,
 .icon-btn {
   border: 1px solid var(--line);
@@ -363,14 +423,31 @@
   .layout {
     flex-direction: column;
     height: 100dvh;
+    overflow: hidden;
   }
 
   .topbar {
     padding: 0 14px;
+    gap: 8px;
+    height: 56px;
   }
 
   .model-pill {
     font-size: 13px;
+    padding: 7px 10px;
+  }
+
+  .pro-badge,
+  .ghost-btn {
+    display: none;
+  }
+
+  .menu-btn {
+    display: inline-flex;
+  }
+
+  .topbar-actions {
+    margin-left: auto;
   }
 }
 

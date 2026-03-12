@@ -2,6 +2,8 @@
   import { createEventDispatcher } from "svelte";
 
   export let isDark = false;
+  export let isMobile = false;
+  export let isOpen = true;
   export let sections = [];
   export let activeChatId = null;
 
@@ -27,7 +29,7 @@
   }
 </script>
 
-<aside class="sidebar" class:dark={isDark}>
+<aside class="sidebar" class:dark={isDark} class:mobile={isMobile} class:open={isOpen}>
   <div class="brand-row">
     <div class="logo">◆</div>
     <div class="brand-text">RenAi</div>
@@ -63,8 +65,8 @@
   <div class="profile">
     <div class="avatar">JD</div>
     <div class="person">
-      <strong>Jane Doe</strong>
-      <span>jane@example.com</span>
+      <strong>Laurence Jan</strong>
+      <span>laurencejan1431@gmail.com</span>
     </div>
   </div>
 </aside>
@@ -214,11 +216,26 @@
 
   @media (max-width: 860px) {
     .sidebar {
-      width: 100%;
+      width: min(86vw, 320px);
       min-width: 0;
-      height: 210px;
-      border-right: 0;
-      border-bottom: 1px solid var(--line);
+      height: 100dvh;
+      border-right: 1px solid var(--line);
+      border-bottom: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 20;
+      transform: translateX(-105%);
+      transition: transform 180ms ease;
+      box-shadow: 0 20px 44px rgba(6, 12, 28, 0.28);
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    .profile {
+      margin-top: auto;
     }
   }
 </style>
