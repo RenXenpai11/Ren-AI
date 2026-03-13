@@ -58,6 +58,7 @@
 
   let activeChatId = chats[0].id;
   let messages = [...chats[0].messages];
+  $: hasConversation = messages.some((msg) => msg.role === "user");
 
   $: sidebarSections = sectionOrder
     .map((title) => ({
@@ -71,6 +72,7 @@
   let isDark = false;
   let isMobile = false;
   let isSidebarOpen = true;
+  let typingAnimationToken = 0;
 
   onMount(() => {
     const storedChats = localStorage.getItem(CHAT_STORAGE_KEY);
@@ -100,7 +102,8 @@
     if (savedTheme) {
       isDark = savedTheme === "dark";
     } else {
-      isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      isDark = true;
+      localStorage.setItem("aura-theme", "dark");
     }
 
     const media = window.matchMedia("(max-width: 860px)");
@@ -130,11 +133,42 @@
     localStorage.setItem("aura-theme", isDark ? "dark" : "light");
   }
 
-  function syncActiveChatMessages(nextMessages) {
-    messages = nextMessages;
+  function syncActiveChatMessages(nextMessages, chatId = activeChatId) {
+    if (activeChatId === chatId) {
+      messages = nextMessages;
+    }
+
     chats = chats.map((chat) =>
-      chat.id === activeChatId ? { ...chat, messages: nextMessages } : chat
+      chat.id === chatId ? { ...chat, messages: nextMessages } : chat
     );
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function animateAssistantReply(baseMessages, reply, chatId) {
+    const token = ++typingAnimationToken;
+    const safeReply = String(reply ?? "");
+    let cursor = 0;
+
+    while (cursor < safeReply.length) {
+      if (token !== typingAnimationToken) return;
+
+      const remaining = safeReply.length - cursor;
+      const step = Math.max(1, Math.ceil(remaining / 35));
+      cursor = Math.min(safeReply.length, cursor + step);
+
+      syncActiveChatMessages(
+        [...baseMessages, { role: "ai", text: `${safeReply.slice(0, cursor)}▍` }],
+        chatId
+      );
+
+      await wait(20);
+    }
+
+    if (token !== typingAnimationToken) return;
+    syncActiveChatMessages([...baseMessages, { role: "ai", text: safeReply }], chatId);
   }
 
   function maybeRenameChat(promptText) {
@@ -200,25 +234,40 @@
     handleSendInput(event.detail);
   }
 
-  async function handleSendInput(userMessage){
-    if (!userMessage?.trim()) {
+  function toUserBubbleText(userMessage, attachments) {
+    const text = String(userMessage || "").trim();
+    if (!attachments.length) return text;
+
+    const attachmentLine = `Attached: ${attachments.map((item) => item.name).join(", ")}`;
+    return text ? `${text}\n\n${attachmentLine}` : attachmentLine;
+  }
+
+  async function handleSendInput(payload){
+    const userMessage = typeof payload === "string" ? payload : payload?.message;
+    const attachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+
+    if (!String(userMessage || "").trim() && attachments.length === 0) {
       return;
     }
 
+    const targetChatId = activeChatId;
+    const userBubbleText = toUserBubbleText(userMessage, attachments);
+
     const optimisticMessages = [
       ...messages,
-      { role:"user", text:userMessage },
+      { role:"user", text:userBubbleText },
       { role:"ai", text:"(AI thinking...)" }
     ];
 
-    syncActiveChatMessages(optimisticMessages);
-    maybeRenameChat(userMessage);
+    typingAnimationToken += 1;
+    syncActiveChatMessages(optimisticMessages, targetChatId);
+    maybeRenameChat(String(userMessage || attachments[0]?.name || "New Chat"));
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage })
+        body: JSON.stringify({ message: userMessage, attachments })
       });
 
       if (!response.ok) {
@@ -229,20 +278,16 @@
       const data = await response.json();
       
       if (data.reply) {
-        // Replace the thinking message with the actual AI response
-        syncActiveChatMessages([
-          ...optimisticMessages.slice(0, -1),
-          { role: "ai", text: data.reply }
-        ]);
+        await animateAssistantReply(optimisticMessages.slice(0, -1), data.reply, targetChatId);
       } else {
         throw new Error("No reply in response");
       }
     } catch (error) {
       console.error("Chat error:", error);
-      syncActiveChatMessages([
-        ...optimisticMessages.slice(0, -1),
-        { role: "ai", text: `Error: ${error.message}` }
-      ]);
+      syncActiveChatMessages(
+        [...optimisticMessages.slice(0, -1), { role: "ai", text: `Error: ${error.message}` }],
+        targetChatId
+      );
     }
   }
 </script>
@@ -294,10 +339,10 @@
       </div>
     </div>
 
-    <div class="main">
+    <div class="main" class:new-session={!hasConversation}>
       <ChatArea {messages} on:promptsend={handlePromptSend} />
 
-      <ChatInput on:send={handleSend} />
+      <ChatInput centered={!hasConversation} on:send={handleSend} />
     </div>
   </div>
 
@@ -419,6 +464,27 @@
   min-height: 0;
 }
 
+.main.new-session {
+  justify-content: center;
+  gap: 12px;
+  padding-bottom: 44px;
+}
+
+.main.new-session :global(.chat-area) {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.main.new-session :global(.landing) {
+  margin-top: 0;
+}
+
+.main.new-session :global(.cards) {
+  display: none;
+}
+
 @media (max-width: 860px) {
   .layout {
     flex-direction: column;
@@ -448,6 +514,10 @@
 
   .topbar-actions {
     margin-left: auto;
+  }
+
+  .main.new-session {
+    padding-bottom: 18px;
   }
 }
 
