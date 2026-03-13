@@ -133,13 +133,10 @@
     localStorage.setItem("aura-theme", isDark ? "dark" : "light");
   }
 
-  function syncActiveChatMessages(nextMessages, chatId = activeChatId) {
-    if (activeChatId === chatId) {
-      messages = nextMessages;
-    }
-
+  function syncActiveChatMessages(nextMessages) {
+    messages = nextMessages;
     chats = chats.map((chat) =>
-      chat.id === chatId ? { ...chat, messages: nextMessages } : chat
+      chat.id === activeChatId ? { ...chat, messages: nextMessages } : chat
     );
   }
 
@@ -147,7 +144,7 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function animateAssistantReply(baseMessages, reply, chatId) {
+  async function animateAssistantReply(baseMessages, reply) {
     const token = ++typingAnimationToken;
     const safeReply = String(reply ?? "");
     let cursor = 0;
@@ -159,16 +156,16 @@
       const step = Math.max(1, Math.ceil(remaining / 35));
       cursor = Math.min(safeReply.length, cursor + step);
 
-      syncActiveChatMessages(
-        [...baseMessages, { role: "ai", text: `${safeReply.slice(0, cursor)}▍` }],
-        chatId
-      );
+      syncActiveChatMessages([
+        ...baseMessages,
+        { role: "ai", text: `${safeReply.slice(0, cursor)}▍` }
+      ]);
 
       await wait(20);
     }
 
     if (token !== typingAnimationToken) return;
-    syncActiveChatMessages([...baseMessages, { role: "ai", text: safeReply }], chatId);
+    syncActiveChatMessages([...baseMessages, { role: "ai", text: safeReply }]);
   }
 
   function maybeRenameChat(promptText) {
@@ -234,40 +231,26 @@
     handleSendInput(event.detail);
   }
 
-  function toUserBubbleText(userMessage, attachments) {
-    const text = String(userMessage || "").trim();
-    if (!attachments.length) return text;
-
-    const attachmentLine = `Attached: ${attachments.map((item) => item.name).join(", ")}`;
-    return text ? `${text}\n\n${attachmentLine}` : attachmentLine;
-  }
-
-  async function handleSendInput(payload){
-    const userMessage = typeof payload === "string" ? payload : payload?.message;
-    const attachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
-
-    if (!String(userMessage || "").trim() && attachments.length === 0) {
+  async function handleSendInput(userMessage){
+    if (!userMessage?.trim()) {
       return;
     }
 
-    const targetChatId = activeChatId;
-    const userBubbleText = toUserBubbleText(userMessage, attachments);
-
     const optimisticMessages = [
       ...messages,
-      { role:"user", text:userBubbleText },
+      { role:"user", text:userMessage },
       { role:"ai", text:"(AI thinking...)" }
     ];
 
     typingAnimationToken += 1;
-    syncActiveChatMessages(optimisticMessages, targetChatId);
-    maybeRenameChat(String(userMessage || attachments[0]?.name || "New Chat"));
+    syncActiveChatMessages(optimisticMessages);
+    maybeRenameChat(userMessage);
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage, attachments })
+        body: JSON.stringify({ message: userMessage })
       });
 
       if (!response.ok) {
@@ -278,16 +261,16 @@
       const data = await response.json();
       
       if (data.reply) {
-        await animateAssistantReply(optimisticMessages.slice(0, -1), data.reply, targetChatId);
+        await animateAssistantReply(optimisticMessages.slice(0, -1), data.reply);
       } else {
         throw new Error("No reply in response");
       }
     } catch (error) {
       console.error("Chat error:", error);
-      syncActiveChatMessages(
-        [...optimisticMessages.slice(0, -1), { role: "ai", text: `Error: ${error.message}` }],
-        targetChatId
-      );
+      syncActiveChatMessages([
+        ...optimisticMessages.slice(0, -1),
+        { role: "ai", text: `Error: ${error.message}` }
+      ]);
     }
   }
 </script>

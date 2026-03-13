@@ -167,7 +167,6 @@ article p {
   color: #fff;
   max-width: 480px;
   margin-left: auto;
-  white-space: pre-wrap;
 }
 
 .ai {
